@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Collections.Generic;
 using System.Linq;
@@ -48,7 +48,7 @@ namespace Archipelago.RiskOfRain2
         private Queue<KeyValuePair<long, string>> stageReceivedQueue = new Queue<KeyValuePair<long, string>>();
         // TODO get magic numbers from somewhere else (eg move to LocationHandler.cs)
         private const long environmentRangeLower = 37700;
-        private const long environmentRangeUpper = 37999;
+        private const long environmentRangeUpper = 37799;
         private const long fillerRangeLower = 37300;
         private const long fillerRangeUpper = 37399;
         private const long trapRangeLower = 37400;
@@ -76,7 +76,7 @@ namespace Archipelago.RiskOfRain2
         {
             this.session = session;
             // get the initial id from the seed for backwards compatibility
-            ItemStartId = session.Locations.GetLocationIdFromName("Risk of Rain 2", "ItemPickup1");
+            ItemStartId = session.Locations.GetLocationIdFromName("Risk of Rain 2 Expanded", "ItemPickup1");
 
             // TODO all the hooks for ArchipelagoItemLogicController should probably be moved into a hook method
             On.RoR2.RoR2Application.Update += RoR2Application_Update;
@@ -145,15 +145,50 @@ namespace Archipelago.RiskOfRain2
             combatDirector = self;
         }
 
+        private int itemsProcessed = 0;
+        private bool isInitialSync = true;
+
+        public void StartInitialSyncTimer()
+        {
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                int lastCount = -1;
+                // Wait for the item count to stabilize for 500ms
+                while (true)
+                {
+                    int currentCount = session.Items.AllItemsReceived.Count;
+                    if (currentCount == lastCount)
+                    {
+                        break;
+                    }
+                    lastCount = currentCount;
+                    await System.Threading.Tasks.Task.Delay(500);
+                }
+                isInitialSync = false;
+                Log.LogDebug("Initial item sync completed. Traps will now be queued normally.");
+            });
+        }
+
         private void Items_ItemReceived(ReceivedItemsHelper helper)
         {
             var newItem = helper.DequeueItem();
-            if (ArchipelagoClient.lastReceivedItemindex < helper.AllItemsReceived.Count)
+            itemsProcessed++;
+
+            if (itemsProcessed <= ArchipelagoClient.lastReceivedItemindex)
             {
-                EnqueueItem(newItem.ItemId);
-                ArchipelagoClient.lastReceivedItemindex = helper.AllItemsReceived.Count;
+                return;
             }
-            else if (environmentRangeLower <= newItem.ItemId && newItem.ItemId <= environmentRangeUpper)
+
+            ArchipelagoClient.lastReceivedItemindex = itemsProcessed;
+
+            if (trapRangeLower <= newItem.ItemId && newItem.ItemId <= trapRangeUpper)
+            {
+                if (!isInitialSync)
+                {
+                    EnqueueItem(newItem.ItemId);
+                }
+            }
+            else
             {
                 EnqueueItem(newItem.ItemId);
             }
@@ -236,7 +271,7 @@ namespace Archipelago.RiskOfRain2
                         // in the case the id is incorrectly set, attempt to set it again
                         if (ItemStartId == -1)
                         {
-                            ItemStartId = session.Locations.GetLocationIdFromName("Risk of Rain 2", "ItemPickup1");
+                            ItemStartId = session.Locations.GetLocationIdFromName("Risk of Rain 2 Expanded", "ItemPickup1");
                             // in case that fails, just manually set it to a default value
                             if (ItemStartId == -1) ItemStartId = 38000;
                             // NOTE: that this solution will sometimes result in the id just being blatently wrong the first time someone attempts to join a seed.
@@ -437,6 +472,24 @@ namespace Archipelago.RiskOfRain2
                     break;
                 case 37404:
                     TeleportPlayer();
+                    break;
+                case 37405:
+                    MeteorTrap();
+                    break;
+                case 37406:
+                    CurseTrap();
+                    break;
+                case 37407:
+                    BankruptcyTrap();
+                    break;
+                case 37408:
+                    DoppelgangerTrap();
+                    break;
+                case 37409:
+                    BaneTrap();
+                    break;
+                case 37410:
+                    RavenousCheeseTrap();
                     break;
             }
         }
@@ -821,6 +874,87 @@ namespace Archipelago.RiskOfRain2
             Run.instance.SetRunStopwatch(time);
             ChatMessage.SendColored($"Monsters grow stronger with time!", Color.red);
             TeamManager.instance.SetTeamLevel(TeamIndex.Monster, 1);
+        }
+
+        private void MeteorTrap()
+        {
+            if (PlayerCharacterMasterController.instances.Count > 0)
+            {
+                var meteorPrefab = LegacyResourcesAPI.Load<GameObject>("Prefabs/NetworkedObjects/MeteorStorm");
+                var playerBody = PlayerCharacterMasterController.instances[0].master.GetBody();
+                if (playerBody != null) 
+                {
+                    var meteor = UnityEngine.Object.Instantiate(meteorPrefab, playerBody.corePosition, Quaternion.identity);
+                    var meteorStormController = meteor.GetComponent<MeteorStormController>();
+                    meteorStormController.owner = PlayerCharacterMasterController.instances[0].master.gameObject;
+                    NetworkServer.Spawn(meteor);
+                    ChatMessage.SendColored($"The sky is falling...", Color.red);
+                }
+            }
+        }
+
+        private void CurseTrap()
+        {
+            foreach (var player in PlayerCharacterMasterController.instances)
+            {
+                var body = player.master.GetBody();
+                if (body)
+                {
+                    body.AddTimedBuff(RoR2Content.Buffs.Cripple, 60f);
+                    body.AddTimedBuff(RoR2Content.Buffs.HealingDisabled, 60f);
+                }
+            }
+            ChatMessage.SendColored($"You feel a terrible curse upon you...", Color.red);
+        }
+
+        private void BankruptcyTrap()
+        {
+            foreach (var player in PlayerCharacterMasterController.instances)
+            {
+                player.master.money = 0;
+            }
+            ChatMessage.SendColored($"Your pockets feel lighter...", Color.red);
+        }
+
+        private void DoppelgangerTrap()
+        {
+            foreach (var player in PlayerCharacterMasterController.instances)
+            {
+                if (player.master)
+                {
+                    try {
+                        // The method might be private, if so we will get a compilation error and fix it.
+                        RoR2.Artifacts.DoppelgangerInvasionManager.CreateDoppelganger(player.master, new Xoroshiro128Plus(RoR2Application.rng.nextUlong));
+                    } catch (System.Exception) {
+                        Log.LogWarning("Failed to spawn doppelganger trap via manager.");
+                    }
+                }
+            }
+            ChatMessage.SendColored($"Your reflection steps into reality...", Color.red);
+        }
+
+        private void BaneTrap()
+        {
+            foreach (var player in PlayerCharacterMasterController.instances)
+            {
+                if (player.master && player.master.inventory)
+                {
+                    player.master.inventory.GiveItem(TrapItems.BaneAfflictionItemDef, 1);
+                }
+            }
+            ChatMessage.SendColored($"A heavy burden weighs you down...", Color.red);
+        }
+
+        private void RavenousCheeseTrap()
+        {
+            foreach (var player in PlayerCharacterMasterController.instances)
+            {
+                if (player.master && player.master.inventory)
+                {
+                    player.master.inventory.GiveItem(TrapItems.RavenousCheeseItemDef, 1);
+                }
+            }
+            ChatMessage.SendColored($"Something smells funny...", Color.yellow);
         }
 
         private void DisplayPickupNotification(PickupIndex index, PlayerCharacterMasterController player)

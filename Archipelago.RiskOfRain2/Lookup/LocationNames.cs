@@ -1,4 +1,4 @@
-﻿using Archipelago.RiskOfRain2.Handlers;
+using Archipelago.RiskOfRain2.Handlers;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -41,7 +41,20 @@ namespace Archipelago.RiskOfRain2.Lookup
             { 21, "Treeborn Colony" },
             { 22, "Golden Dieback" },
             { 23, "Helminth Hatchery" },
-            { 40, "Prime Meridian" }
+            { 40, "Prime Meridian" },
+            { 60, "Pretender's Precipice" },
+            { 61, "Iron Alluvium" },
+            { 62, "Iron Auroras" },
+            { 63, "Repurposed Crater" },
+            { 64, "Conduit Canyon" },
+            { 65, "Solutional Haunt" },
+            { 66, "Computational Exchange" },
+            { 67, "Neural Sanctum" },
+            { 70, "Damp Caverns" },
+            { 71, "Tenebrous Quagmire" },
+            { 72, "Lurid Basilica" },
+            { 73, "Soulbound Threshold" },
+            { 74, "Terminal Lucidity" }
         };
 
         public static readonly Dictionary<int, string> cachedLocationsNames = new()
@@ -79,6 +92,42 @@ namespace Archipelago.RiskOfRain2.Lookup
             { 22, "habitatfall" },
             { 23, "helminthroost" },
             { 40, "meridian" },
+            { 60, "nest" },
+            { 61, "ironalluvium" },
+            { 62, "ironalluvium2" },
+            { 63, "repurposedcrater" },
+            { 64, "conduitcanyon" },
+            { 65, "solutionalhaunt" },
+            { 66, "computationalexchange" },
+            { 67, "solusweb" },
+            { 70, "fungal" },
+            { 71, "mire" },
+            { 72, "sanctum" },
+            { 73, "champrush" },
+            { 74, "ultima" },
+        };
+
+        public static readonly Dictionary<int, string> artifactLocations = new()
+        {
+            { 43000, "Artifact: Chaos" },
+            { 43001, "Artifact: Command" },
+            { 43002, "Artifact: Death" },
+            { 43003, "Artifact: Dissonance" },
+            { 43004, "Artifact: Enigma" },
+            { 43005, "Artifact: Evolution" },
+            { 43006, "Artifact: Frailty" },
+            { 43007, "Artifact: Glass" },
+            { 43008, "Artifact: Honor" },
+            { 43009, "Artifact: Kin" },
+            { 43010, "Artifact: Metamorphosis" },
+            { 43011, "Artifact: Sacrifice" },
+            { 43012, "Artifact: Soul" },
+            { 43013, "Artifact: Spite" },
+            { 43014, "Artifact: Swarms" },
+            { 43015, "Artifact: Vengeance" },
+            { 43016, "Artifact: Delusion" },
+            { 43017, "Artifact: Devotion" },
+            { 43018, "Artifact: Prestige" }
         };
 
         public string GetLocationName(string cachedName)

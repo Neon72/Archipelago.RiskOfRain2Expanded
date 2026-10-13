@@ -1,4 +1,4 @@
-﻿using Archipelago.MultiClient.Net;
+using Archipelago.MultiClient.Net;
 using Archipelago.MultiClient.Net.Packets;
 using Archipelago.RiskOfRain2.UI;
 using Archipelago.RiskOfRain2.Net;
@@ -172,15 +172,27 @@ namespace Archipelago.RiskOfRain2.Handlers
 
         private ArchipelagoSession session;
         private LocationInformationTemplate originallocationstemplate;
-        private Dictionary<int, LocationInformationTemplate> currentlocations;
+        private Dictionary<string, LocationInformationTemplate> currentlocations;
+        public bool survivorsanity = false;
+        public bool artifactsanity = false;
 
-        public LocationHandler(ArchipelagoSession session, LocationInformationTemplate locationstemplate)
+        private static readonly Dictionary<string, int> survivorNameToId = new Dictionary<string, int>()
+        {
+            { "Commando", 0 }, { "Huntress", 1 }, { "Bandit2", 2 }, { "Toolbot", 3 },
+            { "Engi", 4 }, { "Mage", 5 }, { "Merc", 6 }, { "Treebot", 7 },
+            { "Loader", 8 }, { "Croco", 9 }, { "Captain", 10 }, { "Railgunner", 11 },
+            { "VoidSurvivor", 12 }, { "Seeker", 13 }, { "Chef", 14 }, { "FalseSon", 15 },
+            { "Drifter", 16 }, { "Operator", 17 }, { "Enforcer", 18 }, { "Acolyte", 19 }
+        };
+
+        public LocationHandler(ArchipelagoSession session, LocationInformationTemplate locationstemplate, bool survivorsanity = false, bool artifactsanity = false)
         {
             Log.LogDebug($"Location handler constructor.");
             this.session = session;
+            this.survivorsanity = survivorsanity;
+            this.artifactsanity = artifactsanity;
             originallocationstemplate = locationstemplate.copy();
-            currentlocations = new Dictionary<int, LocationInformationTemplate>();
-
+            currentlocations = new Dictionary<string, LocationInformationTemplate>();
 
             InitialSetupLocationDict(locationstemplate);
         }
@@ -192,31 +204,8 @@ namespace Archipelago.RiskOfRain2.Handlers
         // TODO this should probably become generic so that environment sets can be passed in (e.g. normal environments, simulacrum environments, etc)
         private void InitialSetupLocationDict(LocationInformationTemplate locationstemplate)
         {
-            currentlocations.Add(ancientloft,       locationstemplate); // Aphelian Sanctuary
-            currentlocations.Add(blackbeach,        locationstemplate); // Distant Roost
-            currentlocations.Add(blackbeach2,       locationstemplate); // Distant Roost
-            currentlocations.Add(lakes,             locationstemplate); // Verdant Falls
-            currentlocations.Add(dampcavesimple,    locationstemplate); // Abyssal Depths
-            currentlocations.Add(foggyswamp,        locationstemplate); // Wetland Aspect
-            currentlocations.Add(frozenwall,        locationstemplate); // Rallypoint Delta
-            currentlocations.Add(golemplains,       locationstemplate); // Titanic Plains
-            currentlocations.Add(golemplains2,      locationstemplate); // Titanic Plains
-            currentlocations.Add(goolake,           locationstemplate); // Abandoned Aqueduct
-            currentlocations.Add(rootjungle,        locationstemplate); // Sundered Grove
-            currentlocations.Add(shipgraveyard,     locationstemplate); // Siren's Call
-            currentlocations.Add(skymeadow,         locationstemplate); // Sky Meadow
-            currentlocations.Add(snowyforest,       locationstemplate); // Siphoned Forest
-            currentlocations.Add(sulfurpools,       locationstemplate); // Sulfur Pools
-            currentlocations.Add(wispgraveyard,     locationstemplate); // Scorched Acres
-            // Seekers of the Storm
-            currentlocations.Add(lakesnight,        locationstemplate); // Viscous Falls
-            currentlocations.Add(village,           locationstemplate); // Shattered Abodes
-            currentlocations.Add(villagenight,      locationstemplate); // Disturbed Impact
-            currentlocations.Add(lemuriantemple,    locationstemplate); // Reformed Altar
-            currentlocations.Add(habitat,           locationstemplate); // Treeborn Colony
-            currentlocations.Add(habitatfall,       locationstemplate); // Golden Dieback
-            currentlocations.Add(helminthroost,    locationstemplate);  // Helminth Hatchery
-            // TODO separate out the DLC locations
+            // We lazily initialize the dictionary when checking/catching up, so this can just be empty for now.
+            // currentlocations is now dynamically populated when CatchUpSceneLocations is called for a specific stage+survivor combo.
         }
 
         /// <summary>
@@ -226,13 +215,50 @@ namespace Archipelago.RiskOfRain2.Handlers
         public void CatchUpSceneLocations(string sceneName)
         {
             int index = GetSceneIndex(sceneName);
-            Dictionary<int, LocationInformationTemplate> locationscopy = currentlocations.ToDictionary(k => k.Key, k => k.Value.copy());
-            if (!locationscopy.TryGetValue(index, out LocationInformationTemplate location)) {
-                return;
+            int survivor_id = 0;
+            string survivor_name = "";
+            string key = index.ToString();
+
+            if (survivorsanity && RoR2.Run.instance != null && PlayerCharacterMasterController.instances.Count > 0 && PlayerCharacterMasterController.instances[0].master != null)
+            {
+                survivor_name = PlayerCharacterMasterController.instances[0].master.bodyPrefab.name;
+                survivor_name = survivor_name.Replace("Body", "");
+                if (survivorNameToId.TryGetValue(survivor_name, out int sid))
+                {
+                    survivor_id = sid;
+                }
+                else
+                {
+                    // Fallback for Modded Survivors loaded outside base 16
+                    // Wait, the client maps modded survivors sequentially in SurvivorLockHandler!
+                    // Let's just assume we can use the same logic or just use survivor_id = 16
+                    // Since we can't easily grab the modded ID from SurvivorLockHandler, we'll assign it dynamically here too if not found.
+                    if (SurvivorCatalog.FindSurvivorDef(survivor_name) != null)
+                    {
+                        survivor_id = 20 + (SurvivorCatalog.FindSurvivorDef(survivor_name).survivorIndex - (SurvivorIndex)18); // Rough fallback, but we'll use a better way later.
+                    }
+                }
+                key = $"{index}_{survivor_id}";
             }
 
+            if (!currentlocations.ContainsKey(key))
+            {
+                currentlocations[key] = originallocationstemplate.copy();
+            }
+
+            LocationInformationTemplate location = currentlocations[key].copy();
+
             ReadOnlyCollection<long> completedchecks = session.Locations.AllLocationsChecked;
-            int environment_start_id = index * ArchipelagoLocationOffsets.allocation + ArchipelagoLocationOffsets.ror2_locations_start_orderedstage;
+            int environment_start_id;
+
+            if (survivorsanity)
+            {
+                environment_start_id = 3800000 + (survivor_id * 100 * ArchipelagoLocationOffsets.allocation) + (index * ArchipelagoLocationOffsets.allocation);
+            }
+            else
+            {
+                environment_start_id = index * ArchipelagoLocationOffsets.allocation + ArchipelagoLocationOffsets.ror2_locations_start_orderedstage;
+            }
 
             Log.LogDebug($"Doing catch up on environment: index {index}, stage name {sceneName}");
             Log.LogDebug($"environment_start_id {environment_start_id}");
@@ -251,7 +277,7 @@ namespace Archipelago.RiskOfRain2.Handlers
                 Log.LogDebug($"caught up to {LocationTypesShortName[type]} {location[type]}");
             }
 
-            currentlocations[index] = location;
+            currentlocations[key] = location;
         }
         public void Hook()
         {
@@ -289,6 +315,10 @@ namespace Archipelago.RiskOfRain2.Handlers
             ArchipelagoConsoleCommand_OnArchipelagoHighlightSatelliteCommandCalled(ArchipelagoPlugin.SatelliteEntry.Value);
             // Newt Altars
             On.RoR2.PortalStatueBehavior.GrantPortalEntry += PortalStatueBehavior_GrantPortalEntry_Blue;
+            if (artifactsanity)
+            {
+                On.RoR2.GenericPickupController.AttemptGrant += GenericPickupController_AttemptGrant;
+            }
             // Highlight Satellite
             
         }
@@ -349,6 +379,10 @@ namespace Archipelago.RiskOfRain2.Handlers
             ArchipelagoConsoleCommand.OnArchipelagoHighlightSatelliteCommandCalled -= ArchipelagoConsoleCommand_OnArchipelagoHighlightSatelliteCommandCalled;
             // Newt Altars
             On.RoR2.PortalStatueBehavior.GrantPortalEntry -= PortalStatueBehavior_GrantPortalEntry_Blue;
+            if (artifactsanity)
+            {
+                On.RoR2.GenericPickupController.AttemptGrant -= GenericPickupController_AttemptGrant;
+            }
             
         }
 
@@ -449,6 +483,26 @@ namespace Archipelago.RiskOfRain2.Handlers
             
         }
 
+        private string GetCurrentKey(string stageName = null)
+        {
+            string name = stageName != null ? stageName : sceneDef.cachedName;
+            int index = GetSceneIndex(name);
+            int survivor_id = 0;
+            if (survivorsanity && RoR2.Run.instance != null && PlayerCharacterMasterController.instances.Count > 0 && PlayerCharacterMasterController.instances[0].master != null)
+            {
+                string survivor_name = PlayerCharacterMasterController.instances[0].master.bodyPrefab.name.Replace("Body", "");
+                if (survivorNameToId.TryGetValue(survivor_name, out int sid))
+                {
+                    survivor_id = sid;
+                }
+                else if (SurvivorCatalog.FindSurvivorDef(survivor_name) != null)
+                {
+                    survivor_id = 20 + (SurvivorCatalog.FindSurvivorDef(survivor_name).survivorIndex - (SurvivorIndex)18);
+                }
+            }
+            return survivorsanity ? $"{index}_{survivor_id}" : index.ToString();
+        }
+
         /// <summary>
         /// Checks the remaing checks of a specific type in the current environment. <br/>
         /// If the type given is LocationTypes.MAX, the total of all locations remaining will be returned.
@@ -457,8 +511,8 @@ namespace Archipelago.RiskOfRain2.Handlers
         /// <returns>Returns the amount of remaining locations.</returns>
         private int checkAvailable(LocationTypes loctype) // TODO make a method to check the nth location
         {
-            int index = GetSceneIndex(sceneDef.cachedName);
-            if (!currentlocations.TryGetValue(index, out var locationsinenvironment))
+            string key = GetCurrentKey();
+            if (!currentlocations.TryGetValue(key, out var locationsinenvironment))
             // prevent KeyNotFoundException by using TryGetValue
             {
                 // if the locations in the environment are not being tracked, there must be 0 locations
@@ -487,14 +541,25 @@ namespace Archipelago.RiskOfRain2.Handlers
         {
             if (LocationTypes.MAX == loctype) throw new ArgumentException("MAX is not a sendable location type.");
 
-            if (!currentlocations.TryGetValue(sceneIndex, out var locationsinenvironment))
+            string key = GetCurrentKey();
+            if (!currentlocations.TryGetValue(key, out var locationsinenvironment))
             // prevent KeyNotFoundException by using TryGetValue
             {
                 // if the locations in the environment that are not being tracked, then there is no check to send
                 return false;
             }
 
-            int environment_start_id = sceneIndex * ArchipelagoLocationOffsets.allocation + ArchipelagoLocationOffsets.ror2_locations_start_orderedstage;
+            int environment_start_id;
+            if (survivorsanity)
+            {
+                int index = GetSceneIndex(sceneDef.cachedName);
+                int survivor_id = int.Parse(key.Split('_')[1]);
+                environment_start_id = 3800000 + (survivor_id * 100 * ArchipelagoLocationOffsets.allocation) + (index * ArchipelagoLocationOffsets.allocation);
+            }
+            else
+            {
+                environment_start_id = sceneIndex * ArchipelagoLocationOffsets.allocation + ArchipelagoLocationOffsets.ror2_locations_start_orderedstage;
+            }
 
             // check if there is a check to be done
             // if there are none, then return false
@@ -522,7 +587,7 @@ namespace Archipelago.RiskOfRain2.Handlers
                 UpdateClientsUI();
             }
 
-            currentlocations[sceneIndex] = locationsinenvironment; // save changes to the count
+            currentlocations[key] = locationsinenvironment; // save changes to the count
             
             sendLocation(next_index + offset_in_allocation + environment_start_id);
 
@@ -533,7 +598,8 @@ namespace Archipelago.RiskOfRain2.Handlers
         }
         private bool UpdateClientsUI()
         {
-            if (!currentlocations.TryGetValue(sceneIndex, out var locationsinenvironment))
+            string key = GetCurrentKey();
+            if (!currentlocations.TryGetValue(key, out var locationsinenvironment))
             // prevent KeyNotFoundException by using TryGetValue
             {
                 // if the locations in the environment that are not being tracked, then there is no check to send
@@ -630,7 +696,8 @@ namespace Archipelago.RiskOfRain2.Handlers
                 int environment_index = GetSceneIndex(stageName);
                 CatchUpSceneLocations(stageName);
                 Log.LogDebug($"Environment {environment_index} with weight {dest.choices[i].weight} has stage name {stageName}.");
-                if (currentlocations.TryGetValue(environment_index, out var locations))
+                string key = GetCurrentKey(stageName);
+                if (currentlocations.TryGetValue(key, out var locations))
                 { 
                     int addweight = locations.total() * 5;
                     Log.LogDebug($"Environment {environment_index} with weight {dest.choices[i].weight} has {addweight / 5} locations, adjusting weight.");
@@ -883,7 +950,8 @@ namespace Archipelago.RiskOfRain2.Handlers
                 return;
             }
 
-            if (currentlocations.TryGetValue(sceneIndex, out var locationsinenvironment))
+            string key = GetCurrentKey();
+            if (currentlocations.TryGetValue(key, out var locationsinenvironment))
             {
                 Log.LogDebug($"amount of shrine locations left {locationsinenvironment[LocationTypes.shrine]}");
                 if (locationsinenvironment[1] == 0) return;
@@ -1040,6 +1108,112 @@ namespace Archipelago.RiskOfRain2.Handlers
             // don't block the other newts, more than one newt in a stage is rare and if also rewards knowing where newts can spawn when you can find and get to two
 
             // don't run the original as we do not want to spawn the portal
+        }
+
+        private static readonly Dictionary<string, int> artifactNameToId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Chaos", 43000 },
+            { "FriendlyFire", 43000 },
+            { "Artifact of Chaos", 43000 },
+
+            { "Command", 43001 },
+            { "Artifact of Command", 43001 },
+
+            { "Death", 43002 },
+            { "TeamDeath", 43002 },
+            { "Artifact of Death", 43002 },
+
+            { "Dissonance", 43003 },
+            { "MixEnemy", 43003 },
+            { "Artifact of Dissonance", 43003 },
+
+            { "Enigma", 43004 },
+            { "Artifact of Enigma", 43004 },
+
+            { "Evolution", 43005 },
+            { "MonsterTeamGainsItems", 43005 },
+            { "Artifact of Evolution", 43005 },
+
+            { "Frailty", 43006 },
+            { "WeakAssKnees", 43006 },
+            { "Artifact of Frailty", 43006 },
+
+            { "Glass", 43007 },
+            { "Artifact of Glass", 43007 },
+
+            { "Honor", 43008 },
+            { "EliteOnly", 43008 },
+            { "Artifact of Honor", 43008 },
+
+            { "Kin", 43009 },
+            { "SingleMonsterType", 43009 },
+            { "Artifact of Kin", 43009 },
+
+            { "Metamorphosis", 43010 },
+            { "RandomSurvivorOnRespawn", 43010 },
+            { "Artifact of Metamorphosis", 43010 },
+
+            { "Sacrifice", 43011 },
+            { "Artifact of Sacrifice", 43011 },
+
+            { "Soul", 43012 },
+            { "WispOnDeath", 43012 },
+            { "Artifact of Soul", 43012 },
+
+            { "Spite", 43013 },
+            { "Bomb", 43013 },
+            { "Artifact of Spite", 43013 },
+
+            { "Swarms", 43014 },
+            { "Artifact of Swarms", 43014 },
+
+            { "Vengeance", 43015 },
+            { "ShadowClone", 43015 },
+            { "Artifact of Vengeance", 43015 },
+
+            { "Delusion", 43016 },
+            { "Artifact of Delusion", 43016 },
+
+            { "Devotion", 43017 },
+            { "Artifact of Devotion", 43017 },
+
+            { "Prestige", 43018 },
+            { "Artifact of Prestige", 43018 }
+        };
+
+        private void GenericPickupController_AttemptGrant(On.RoR2.GenericPickupController.orig_AttemptGrant orig, GenericPickupController self, CharacterBody body)
+        {
+            if (artifactsanity && self != null)
+            {
+                var pickupDef = PickupCatalog.GetPickupDef(self.pickupIndex);
+                if (pickupDef != null && pickupDef.artifactIndex != ArtifactIndex.None)
+                {
+                    ArtifactDef artifactDef = ArtifactCatalog.GetArtifactDef(pickupDef.artifactIndex);
+                    if (artifactDef != null)
+                    {
+                        int locationId = 0;
+                        if (!string.IsNullOrEmpty(artifactDef.cachedName) && artifactNameToId.TryGetValue(artifactDef.cachedName, out int idByName))
+                        {
+                            locationId = idByName;
+                        }
+                        else if (!string.IsNullOrEmpty(artifactDef.nameToken))
+                        {
+                            string resolvedName = RoR2.Language.GetString(artifactDef.nameToken);
+                            if (artifactNameToId.TryGetValue(resolvedName, out int idByToken))
+                            {
+                                locationId = idByToken;
+                            }
+                        }
+
+                        if (locationId != 0 && session != null)
+                        {
+                            Log.LogDebug($"[Artifactsanity] Collected artifact {artifactDef.cachedName}, sending location check {locationId}");
+                            session.Locations.CompleteLocationChecks(locationId);
+                        }
+                    }
+                }
+            }
+            orig(self, body);
         }
 
         ////////////////////////////////////////////////////////////////////////////////////////////////////

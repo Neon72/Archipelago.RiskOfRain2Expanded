@@ -1,11 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <LangVersion>preview</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <VersionPrefix>1.5.3</VersionPrefix>
-    <RiskOfRain2Refs>$(UserProfile)\AppData\Roaming\r2modmanPlus-local\RiskOfRain2\profiles\Testing\BepInEx\plugins\Sneaki-Archipelago\</RiskOfRain2Refs>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <RiskOfRain2Refs Condition="'$(RiskOfRain2Refs)' == ''">$(UserProfile)\AppData\Roaming\r2modmanPlus-local\RiskOfRain2\profiles\Testing\BepInEx\plugins\Sneaki-Archipelago\</RiskOfRain2Refs>
     <OutputPath>bin\$(Configuration)</OutputPath>
   </PropertyGroup>
   <Target Name="CopyMod" AfterTargets="PostBuildEvent">
