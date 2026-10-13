@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -36,6 +36,7 @@ namespace Archipelago.RiskOfRain2
         internal StageBlockerHandler Stageblockerhandler { get; private set; }
         internal LocationHandler Locationhandler { get; private set; }
         internal ShrineChanceHandler shrineChanceHelper { get; private set; }
+        internal SurvivorLockHandler survivorLockHandler { get; private set; }
 
         public ArchipelagoItemLogicController ItemLogic;
         public ArchipelagoLocationCheckProgressBarUI itemCheckBar;
@@ -101,7 +102,7 @@ namespace Archipelago.RiskOfRain2
             {
                 lastReceivedItemindex = 0;
             }
-            var result = session.TryConnectAndLogin("Risk of Rain 2", slotName, ItemsHandlingFlags.AllItems, new Version(0, 6, 4), password: password);
+            var result = session.TryConnectAndLogin("Risk of Rain 2 Expanded", slotName, ItemsHandlingFlags.AllItems, new Version(0, 6, 4), password: password);
 
             if (!result.Successful)
             {
@@ -117,6 +118,7 @@ namespace Archipelago.RiskOfRain2
 
             LoginSuccessful successResult = (LoginSuccessful)result;
             ArchipelagoConnectButtonController.ChangeButtonWhenConnected();
+            ItemLogic.StartInitialSyncTimer();
             if (successResult.SlotData.TryGetValue("finalStageDeath", out var stageDeathObject))
             {
                 finalStageDeath = Convert.ToBoolean(stageDeathObject);
@@ -175,7 +177,17 @@ namespace Archipelago.RiskOfRain2
                     Stageblockerhandler = new StageBlockerHandler();
                     ItemLogic.Stageblockerhandler = Stageblockerhandler;
                     Stageblockerhandler.BlockAll();
-                    Locationhandler = new LocationHandler(session, LocationHandler.buildTemplateFromSlotData(successResult.SlotData));
+                    bool survivorsanity = false;
+                    if (successResult.SlotData.TryGetValue("survivorsanity", out var survivorsanityValue))
+                    {
+                        survivorsanity = Convert.ToBoolean(survivorsanityValue);
+                    }
+                    bool artifactsanity = false;
+                    if (successResult.SlotData.TryGetValue("artifactsanity", out var artifactsanityValue))
+                    {
+                        artifactsanity = Convert.ToBoolean(artifactsanityValue);
+                    }
+                    Locationhandler = new LocationHandler(session, LocationHandler.buildTemplateFromSlotData(successResult.SlotData), survivorsanity, artifactsanity);
                     shrineChanceHelper = new ShrineChanceHandler();
 
                     // TODO there is a more likely a more reasonable location to create the UI for explore mode
@@ -199,6 +211,15 @@ namespace Archipelago.RiskOfRain2
             {
                 StageBlockerHandler.showSeerPortals = Convert.ToBoolean(showSeerPortals);
             }
+            if (successResult.SlotData.TryGetValue("shuffleSurvivors", out var shuffleSurvivors))
+            {
+                survivorLockHandler = new SurvivorLockHandler(session, Convert.ToBoolean(shuffleSurvivors));
+            }
+            else
+            {
+                survivorLockHandler = new SurvivorLockHandler(session, false);
+            }
+
             if (successResult.SlotData.TryGetValue("victory", out var victory))
             {
                 switch (victory.ToString())
@@ -225,6 +246,22 @@ namespace Archipelago.RiskOfRain2
                         acceptableEndings = new[] { DLC2Content.GameEndings.RebirthEndingDef };
                         victoryCondition = "Rebirth";
                         break;
+                    case "5":
+                        acceptableEndings = new GameEndingDef[] { };
+                        acceptableLosses = new[] { "solusweb" };
+                        victoryCondition = "Solusheart";
+                        break;
+                    case "7":
+                        acceptableEndings = new[] {
+                            RoR2Content.GameEndings.MainEnding,
+                            RoR2Content.GameEndings.LimboEnding,
+                            RoR2Content.GameEndings.ObliterationEnding,
+                            DLC1Content.GameEndings.VoidEnding,
+                            DLC2Content.GameEndings.RebirthEndingDef
+                        };
+                        acceptableLosses = new[] { "solusweb", "moon", "moon2", "voidraid", "mysteryspace", "limbo" };
+                        victoryCondition = "Completionist";
+                        break;
                     default:
                         victoryCondition = "any";
                         acceptableEndings = new[] {
@@ -240,7 +277,9 @@ namespace Archipelago.RiskOfRain2
                             "voidraid",
                             "mysteryspace",
                             "limbo",
-                            "meridian"
+                            "meridian",
+                            "solusweb",
+                            "ultima"
                         };
                         break;
 
@@ -354,6 +393,7 @@ namespace Archipelago.RiskOfRain2
             Stageblockerhandler?.Hook();
             Locationhandler?.Hook();
             shrineChanceHelper?.Hook();
+            survivorLockHandler?.Hook();
             ArchipelagoConsoleCommand.OnArchipelagoDeathLinkCommandCalled += ArchipelagoConsoleCommand_OnArchipelagoDeathLinkCommandCalled;
             ArchipelagoConsoleCommand.OnArchipelagoFinalStageDeathCommandCalled += ArchipelagoConsoleCommand_OnArchipelagoFinalStageDeathCommandCalled;
             ArchipelagoConsoleCommand.OnArchipelagoReconnectCommandCalled += ArchipelagoConsoleCommand_OnArchipelagoReconnectCommandCalled;
@@ -361,6 +401,25 @@ namespace Archipelago.RiskOfRain2
             On.RoR2.PortalDialerController.PortalDialerPreDialState.OnEnter += PortalDialerPreDialState_OnEnter;
             //On.RoR2.PortalDialerController.PortalDialerIdleState.OnActivationServer += PortalDialerIdleState_OnActivationServer;
             //On.RoR2.PortalDialerButtonController.onActivation
+            On.RoR2.Inventory.GiveItem_ItemIndex_int += Inventory_GiveItem_ItemIndex_int;
+        }
+
+        private void Inventory_GiveItem_ItemIndex_int(On.RoR2.Inventory.orig_GiveItem_ItemIndex_int orig, RoR2.Inventory self, RoR2.ItemIndex itemIndex, int count)
+        {
+            orig(self, itemIndex, count);
+            if (itemIndex == RoR2.RoR2Content.Items.InvadingDoppelganger.itemIndex)
+            {
+                int dioCount = self.GetItemCount(RoR2.RoR2Content.Items.ExtraLife);
+                if (dioCount > 0)
+                {
+                    self.RemoveItem(RoR2.RoR2Content.Items.ExtraLife, dioCount);
+                }
+                int consumedDioCount = self.GetItemCount(RoR2.RoR2Content.Items.ExtraLifeConsumed);
+                if (consumedDioCount > 0)
+                {
+                    self.RemoveItem(RoR2.RoR2Content.Items.ExtraLifeConsumed, consumedDioCount);
+                }
+            }
         }
 
         private void PortalDialerPreDialState_OnEnter(On.RoR2.PortalDialerController.PortalDialerPreDialState.orig_OnEnter orig, PortalDialerController.PortalDialerPreDialState self)
@@ -387,11 +446,15 @@ namespace Archipelago.RiskOfRain2
             Stageblockerhandler?.UnHook();
             Locationhandler?.UnHook();
             shrineChanceHelper?.UnHook();
+            survivorLockHandler?.UnHook();
             ArchipelagoConsoleCommand.OnArchipelagoDeathLinkCommandCalled -= ArchipelagoConsoleCommand_OnArchipelagoDeathLinkCommandCalled;
             ArchipelagoConsoleCommand.OnArchipelagoFinalStageDeathCommandCalled -= ArchipelagoConsoleCommand_OnArchipelagoFinalStageDeathCommandCalled;
-            session.Socket.ErrorReceived -= Socket_ErrorReceived;
+            if (session != null)
+            {
+                session.Socket.ErrorReceived -= Socket_ErrorReceived;
+            }
             On.RoR2.PortalDialerController.PortalDialerPreDialState.OnEnter -= PortalDialerPreDialState_OnEnter;
-
+            On.RoR2.Inventory.GiveItem_ItemIndex_int -= Inventory_GiveItem_ItemIndex_int;
         }
         private void SceneObjectToggleGroup_Awake(On.RoR2.SceneObjectToggleGroup.orig_Awake orig, SceneObjectToggleGroup self)
         {
@@ -606,9 +669,20 @@ namespace Archipelago.RiskOfRain2
         private bool IsEndingAcceptable(GameEndingDef gameEndingDef)
         {
             Log.LogDebug($"ending stage is {Stage.instance.sceneDef.cachedName}");
+
+            if (victoryCondition == "Completionist")
+            {
+                if (session.Locations.AllMissingLocations.Count > 0)
+                {
+                    ChatMessage.SendColored($"You still have {session.Locations.AllMissingLocations.Count} unchecked locations remaining! Keep going!", Color.red);
+                    return false;
+                }
+            }
+
             return acceptableEndings.Contains(gameEndingDef) ||
                 (finalStageDeath && gameEndingDef == RoR2Content.GameEndings.StandardLoss) && (acceptableLosses.Contains(Stage.instance.sceneDef.cachedName)) ||
-                (finalStageDeath && gameEndingDef == RoR2Content.GameEndings.ObliterationEnding) && (acceptableLosses.Contains(Stage.instance.sceneDef.cachedName));
+                (finalStageDeath && gameEndingDef == RoR2Content.GameEndings.ObliterationEnding) && (acceptableLosses.Contains(Stage.instance.sceneDef.cachedName)) ||
+                (victoryCondition == "Solusheart" && gameEndingDef != null && gameEndingDef.isWin && Stage.instance.sceneDef.cachedName == "solusweb");
         }
 
         // When exiting to menu/game this will run

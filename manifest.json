@@ -1,8 +1,8 @@
 ﻿{
-	"name": "Archipelago",
-	"version_number": "1.5.5",
-	"website_url": "https://github.com/kindasneaki/Archipelago.RiskOfRain2",
-	"description": "Archipelago multiworld randomizer client implementation enabling Risk of Rain 2 based Archipelago runners.",
+	"name": "ArchipelagoExpanded",
+	"version_number": "0.1.0",
+	"website_url": "https://github.com/Neon72/Archipelago.RiskOfRain2Expanded",
+	"description": "[Playtest Beta] Fork of the Archipelago RoR2 client adding Explore mode for all DLCs, Hallowed Concepts, Artifactsanity and survivor options.",
 	"dependencies": [
 		"bbepis-BepInExPack-5.4.2101",
 		"RiskofThunder-HookGenPatcher-1.2.3",

@@ -22,10 +22,10 @@ namespace Archipelago.RiskOfRain2
     //[BepInDependency("com.KingEnderBrine.InLobbyConfig", BepInDependency.DependencyFlags.HardDependency)]
     public class ArchipelagoPlugin : BaseUnityPlugin
     {
-        public const string PluginGUID = "com.Ijwu.Archipelago";
-        public const string PluginAuthor = "Ijwu/Sneaki";
-        public const string PluginName = "Archipelago";
-        public const string PluginVersion = "1.5.5";
+        public const string PluginGUID = "com.Neon72.ArchipelagoExpanded";
+        public const string PluginAuthor = "Ijwu/Sneaki/Neon72";
+        public const string PluginName = "Archipelago Expanded";
+        public const string PluginVersion = "0.1.0";
 
         public static BepInEx.Configuration.ConfigEntry<bool> SatelliteEntry { get; set; }
         public static BepInEx.Configuration.ConfigEntry<string> SlotNameEntry { get; set; }
@@ -92,6 +92,7 @@ namespace Archipelago.RiskOfRain2
             NetworkingAPI.RegisterMessageType<ArchipelagoStartExplore>();
 
             CommandHelper.AddToConsoleWhenReady();
+            TrapItems.Init();
         }
 
         public void Start()
